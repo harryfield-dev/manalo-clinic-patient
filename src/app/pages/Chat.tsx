@@ -23,8 +23,8 @@ function formatDate(ts: string) {
   const today = toDateOnly(new Date());
   const yesterday = toDateOnly(new Date(Date.now() - 86400000));
 
-  if (dDate.getTime() === today.getTime()) return "Yesterday";
-  if (dDate.getTime() === yesterday.getTime()) return "Today";
+  if (dDate.getTime() === today.getTime()) return "Today";
+  if (dDate.getTime() === yesterday.getTime()) return "Yesterday";
 
   return d.toLocaleDateString(phLocale, {
     timeZone: phTimeZone,
