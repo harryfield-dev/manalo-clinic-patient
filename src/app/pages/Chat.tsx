@@ -143,12 +143,6 @@ export function Chat() {
               {clinicIsOpen ? "Online" : "Offline"}
             </p>
           </div>
-          <div className="hidden sm:flex flex-col items-end text-xs text-gray-400 gap-1 text-right">
-            <span className="flex items-center gap-1">
-              <Clock size={12} />
-              {todaySchedule?.hours || "Clinic hours unavailable"}
-            </span>
-          </div>
         </div>
 
         {/* Messages area */}
