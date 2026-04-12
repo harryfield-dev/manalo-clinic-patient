@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard,
@@ -45,13 +45,36 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
   const { logout, profile, unreadCount, unreadChatCount } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [tutorialMenuLocked, setTutorialMenuLocked] = useState(false);
 
   const handleLogout = () => {
     logout();
     navigate("/");
   };
 
+  useEffect(() => {
+    const handleTutorialActive = (event: Event) => {
+      const customEvent = event as CustomEvent<{ active?: boolean }>;
+      const active = Boolean(customEvent.detail?.active);
+      setTutorialMenuLocked(active);
+      if (!active) {
+        setSidebarOpen(false);
+      }
+    };
 
+    const handleTutorialMenuToggle = (event: Event) => {
+      const customEvent = event as CustomEvent<{ open?: boolean }>;
+      setSidebarOpen(Boolean(customEvent.detail?.open));
+    };
+
+    window.addEventListener("tutorial:set-active", handleTutorialActive as EventListener);
+    window.addEventListener("tutorial:toggle-mobile-menu", handleTutorialMenuToggle as EventListener);
+
+    return () => {
+      window.removeEventListener("tutorial:set-active", handleTutorialActive as EventListener);
+      window.removeEventListener("tutorial:toggle-mobile-menu", handleTutorialMenuToggle as EventListener);
+    };
+  }, []);
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -89,7 +112,9 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
               data-tutorial={item.tutorial}
               onClick={() => {
                 navigate(item.path);
-                setSidebarOpen(false);
+                if (!tutorialMenuLocked) {
+                  setSidebarOpen(false);
+                }
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 group relative ${
                 active
@@ -183,15 +208,21 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setSidebarOpen(false)}
+            onClick={() => {
+              if (!tutorialMenuLocked) {
+                setSidebarOpen(false);
+              }
+            }}
           />
           <aside className="relative z-10 flex flex-col w-64 bg-[#0A2463]">
-            <button
-              className="absolute top-4 right-4 text-white/60 hover:text-white"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X size={20} />
-            </button>
+            {!tutorialMenuLocked && (
+              <button
+                className="absolute top-4 right-4 text-white/60 hover:text-white"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            )}
             <SidebarContent />
           </aside>
         </div>

@@ -68,6 +68,7 @@ export function OnboardingTutorial() {
   const [step, setStep] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [done, setDone] = useState(false);
+  const retryTimeoutRef = useRef<number | null>(null);
 
   // A newly registered account should always trigger the tutorial once,
   // even if this browser has a previously completed tutorial flag.
@@ -81,9 +82,27 @@ export function OnboardingTutorial() {
     }
   }, []);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("tutorial:set-active", { detail: { active } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("tutorial:set-active", { detail: { active: false } }));
+    };
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) {
+      window.dispatchEvent(new CustomEvent("tutorial:toggle-mobile-menu", { detail: { open: false } }));
+      return;
+    }
+
+    const needsSidebar = STEPS[step].targetSelector.includes("nav-");
+    window.dispatchEvent(new CustomEvent("tutorial:toggle-mobile-menu", { detail: { open: needsSidebar } }));
+  }, [active, step]);
+
   // Update target element rect whenever step changes
   useEffect(() => {
     if (!active) return;
+
     const updateRect = () => {
       const el = document.querySelector(STEPS[step].targetSelector);
       if (el) {
@@ -92,9 +111,30 @@ export function OnboardingTutorial() {
         setTargetRect(null);
       }
     };
-    updateRect();
-    window.addEventListener("resize", updateRect);
-    return () => window.removeEventListener("resize", updateRect);
+
+    const refreshRect = () => {
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current);
+      }
+
+      updateRect();
+
+      if (!document.querySelector(STEPS[step].targetSelector)) {
+        retryTimeoutRef.current = window.setTimeout(updateRect, 260);
+      }
+    };
+
+    refreshRect();
+    window.addEventListener("resize", refreshRect);
+    window.addEventListener("scroll", refreshRect, true);
+
+    return () => {
+      window.removeEventListener("resize", refreshRect);
+      window.removeEventListener("scroll", refreshRect, true);
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current);
+      }
+    };
   }, [active, step]);
 
   const handleSkip = () => {
@@ -123,7 +163,32 @@ export function OnboardingTutorial() {
 
   // Compute tooltip position relative to target
   const getTooltipStyle = (): React.CSSProperties => {
-    if (!targetRect) return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+    const isMobile = window.innerWidth < 1024;
+    const tooltipWidth = Math.min(360, window.innerWidth - 32);
+
+    if (!targetRect) {
+      return isMobile
+        ? {
+            left: 16,
+            right: 16,
+            bottom: 16,
+            width: tooltipWidth,
+          }
+        : { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+    }
+
+    if (isMobile) {
+      const safeTop = targetRect.bottom + 16;
+      const maxTop = window.innerHeight - 240;
+
+      return {
+        left: 16,
+        right: 16,
+        top: Math.min(safeTop, Math.max(16, maxTop)),
+        width: tooltipWidth,
+      };
+    }
+
     const pos = currentStep.tooltipPosition;
     if (pos === "right") {
       return {
@@ -147,7 +212,7 @@ export function OnboardingTutorial() {
   // Spotlight style (box-shadow cutout)
   const getSpotlightStyle = (): React.CSSProperties | undefined => {
     if (!targetRect) return undefined;
-    const pad = 8;
+    const pad = window.innerWidth < 1024 ? 6 : 8;
     return {
       position: "fixed",
       top: targetRect.top - pad,
@@ -240,7 +305,8 @@ export function OnboardingTutorial() {
           style={{
             position: "fixed",
             zIndex: 9999,
-            width: 360,
+            width: Math.min(360, window.innerWidth - 32),
+            maxWidth: "calc(100vw - 2rem)",
             fontFamily: "DM Sans, sans-serif",
             ...getTooltipStyle(),
           }}

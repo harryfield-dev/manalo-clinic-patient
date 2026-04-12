@@ -49,6 +49,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const LUNCH_HOUR_SLOTS = new Set(["12:00 PM", "12:30 PM"]);
 
 function getDaysInMonth(y: number, m: number) {
   return new Date(y, m + 1, 0).getDate();
@@ -235,6 +236,7 @@ function SlotGrid({
 }) {
   const getCount = (slot: string) => globalSlotCounts[`${date}|${slot}`] ?? 0;
   const isFull = (slot: string) => getCount(slot) >= MAX_SLOT_CAPACITY;
+  const isLunchHour = (slot: string) => LUNCH_HOUR_SLOTS.has(slot);
 
   // Group by hour
   const groupedSlots: Record<string, string[]> = {};
@@ -249,16 +251,19 @@ function SlotGrid({
   return (
     <div className="space-y-5 mt-4">
       {Object.entries(groupedSlots).map(([hourLabel, slots]) => {
-        const hourFull = slots.every((slot) => isFull(slot));
+        const hourLunch = slots.every((slot) => isLunchHour(slot));
+        const hourFull = slots.every((slot) => isFull(slot) || isLunchHour(slot));
         const allPast = slots.every((slot) => isSlotPast(slot, date));
-        const availableSlots = slots.filter((s) => !isFull(s) && !isSlotPast(s, date)).length;
+        const availableSlots = slots.filter((s) => !isFull(s) && !isSlotPast(s, date) && !isLunchHour(s)).length;
 
         return (
           <div key={hourLabel}>
             {/* Hour header */}
             <div className="flex items-center gap-2 mb-2">
               <span
-                className={`text-xs font-bold px-3 py-1 rounded-lg ${allPast
+                className={`text-xs font-bold px-3 py-1 rounded-lg ${hourLunch
+                  ? "bg-amber-100 text-amber-700"
+                  : allPast
                   ? "bg-gray-100 text-gray-400"
                   : hourFull
                     ? "bg-red-100 text-red-600"
@@ -267,7 +272,9 @@ function SlotGrid({
               >
                 {hourLabel}
               </span>
-
+              {hourLunch && (
+                <span className="text-[11px] font-medium text-amber-700">Lunch hour</span>
+              )}
 
             </div>
 
@@ -277,12 +284,15 @@ function SlotGrid({
                 const count = getCount(slot);
                 const full = isFull(slot);
                 const past = isSlotPast(slot, date);
-                const disabled = full || past;
+                const lunchHour = isLunchHour(slot);
+                const disabled = full || past || lunchHour;
                 const sel = selected === slot;
                 const remaining = MAX_SLOT_CAPACITY - count;
 
                 let btnClass = "";
-                if (past) {
+                if (lunchHour) {
+                  btnClass = "bg-amber-50 text-amber-700 cursor-not-allowed border border-amber-200";
+                } else if (past) {
                   btnClass = "bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200";
                 } else if (full) {
                   btnClass = "bg-red-50 text-red-400 cursor-not-allowed border border-red-200";
@@ -302,7 +312,9 @@ function SlotGrid({
                     className={`py-3 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex flex-col items-center gap-1 ${btnClass}`}
                   >
                     <span className="font-semibold">{slot}</span>
-                    {past ? (
+                    {lunchHour ? (
+                      <span className="text-[10px] text-amber-700 font-bold">Lunch hour</span>
+                    ) : past ? (
                       <span className="text-[10px] text-gray-400">Passed</span>
                     ) : full ? (
                       <span className="text-[10px] text-red-400 font-bold">FULL</span>

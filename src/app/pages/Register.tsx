@@ -1083,10 +1083,10 @@ export function Register() {
 
         {/* Nav buttons */}
         {phase === "steps" && (
-          <div className="px-8 pb-8 flex items-center justify-between">
+          <div className="px-5 sm:px-8 pb-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={currentStep === 0 ? () => navigate("/login") : prev}
-              className="flex items-center gap-2 text-gray-500 hover:text-[#0A2463] text-sm transition-colors"
+              className="flex w-full sm:w-auto items-center justify-center sm:justify-start gap-2 text-gray-500 hover:text-[#0A2463] text-sm transition-colors"
             >
               <ArrowLeft size={15} />
               {currentStep === 0 ? "Back to Login" : "Previous"}
@@ -1095,7 +1095,7 @@ export function Register() {
               onClick={next}
               disabled={nextDisabled}
               title={currentStep === 0 && !agreedToPolicy ? "Please agree to the Privacy Policy and Terms of Service" : undefined}
-              className="flex items-center gap-2 bg-[#1B4FD8] hover:bg-[#0A2463] text-white px-6 py-2.5 rounded-xl text-sm uppercase tracking-wider transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex w-full sm:w-auto items-center justify-center gap-2 bg-[#1B4FD8] hover:bg-[#0A2463] text-white px-6 py-3 sm:py-2.5 rounded-xl text-sm uppercase tracking-wider transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <><Loader2 size={15} className="animate-spin" />{gmailChecking ? "Verifying email…" : "Sending code…"}</>

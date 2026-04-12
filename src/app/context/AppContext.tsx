@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { sanitize, sanitizeEmail, sanitizeText } from "../lib/inputUtils";
 import { formatPhonePH, isValidPhonePH, toInternationalPH } from "../lib/phoneUtils";
 import { toast } from "sonner";
+import { getClinicStatus } from "../lib/clinicStatusLive";
 
 export const MAX_SLOT_CAPACITY = 3;
 
@@ -391,6 +392,7 @@ interface AppContextType {
   clinicPhone: string;
   clinicMapsLink: string;
   clinicSchedule: { day: string; hours: string; closed?: boolean }[];
+  clinicIsOpen: boolean;
   appointments: Appointment[];
   notifications: Notification[];
   chatMessages: ChatMessage[];
@@ -442,6 +444,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     { day: "Saturday", hours: "7:00 AM – 3:00 PM", closed: false },
     { day: "Sunday", hours: "Closed", closed: true },
   ]);
+
+  const applyClinicSettings = (data: Record<string, any>) => {
+    if (data.clinic_name) setClinicName(data.clinic_name);
+    if (data.address) setClinicAddress(data.address);
+    if (data.phone) setClinicPhone(data.phone);
+    if (data.maps_link) setClinicMapsLink(data.maps_link);
+    const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    setClinicSchedule(days.map((day) => ({
+      day: day.charAt(0).toUpperCase() + day.slice(1),
+      hours: data[day] || "Closed",
+      closed: data[day] === "Closed" || !data[day],
+    })));
+  };
 
   const clearAuthState = (message = "") => {
     setIsAuthenticated(false);
@@ -667,18 +682,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .limit(1)
         .single();
       if (!data) return;
-      if (data.clinic_name) setClinicName(data.clinic_name);
-      if (data.address) setClinicAddress(data.address);
-      if (data.phone) setClinicPhone(data.phone);
-      if (data.maps_link) setClinicMapsLink(data.maps_link);
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      setClinicSchedule(days.map(day => ({
-        day: day.charAt(0).toUpperCase() + day.slice(1),
-        hours: data[day] || 'Closed',
-        closed: data[day] === 'Closed' || !data[day],
-      })));
+      applyClinicSettings(data);
     };
     fetchClinicSettings();
+
+    const clinicSettingsChannel = supabase
+      .channel("patient-clinic-settings")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "clinic_settings",
+      }, (payload) => {
+        if (payload.eventType === "DELETE") return;
+        applyClinicSettings(payload.new as Record<string, any>);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(clinicSettingsChannel);
+    };
   }, []);
 
   useEffect(() => {
@@ -1127,12 +1149,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
   // ── FIX: count unread chat messages using notifications table read status ──
   const unreadChatCount = notifications.filter((n) => n.type === "ChatReply" && !n.read).length;
+  const clinicIsOpen = getClinicStatus(clinicSchedule, new Date()).isOpen;
 
   return (
     <AppContext.Provider value={{
       isAuthenticated, authErrorMessage, profile, appointments, notifications,
       chatMessages, slotBookings, unreadCount, unreadChatCount, loading,
-      clinicName, clinicAddress, clinicPhone, clinicMapsLink, clinicSchedule,
+      clinicName, clinicAddress, clinicPhone, clinicMapsLink, clinicSchedule, clinicIsOpen,
       loginTimestamp,
       login, logout, clearAuthError, register, updateProfile, addAppointment, cancelAppointment,
       getSlotCount, isSlotFull, hasAppointmentOnDate,

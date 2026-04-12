@@ -209,6 +209,7 @@ export function Notifications() {
     useApp();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [pendingDeleteNotification, setPendingDeleteNotification] = useState<Notification | null>(null);
 
   const filterByTab = (list: Notification[]) => {
     if (activeTab === "appointments") return list.filter(isAppointmentNotification);
@@ -271,6 +272,24 @@ export function Notifications() {
         variant="danger"
         onConfirm={() => { setShowClearConfirm(false); clearNotifications(); }}
         onCancel={() => setShowClearConfirm(false)}
+      />
+      <ConfirmModal
+        open={pendingDeleteNotification !== null}
+        title="Remove Notification?"
+        description={
+          pendingDeleteNotification
+            ? `Are you sure you want to remove "${pendingDeleteNotification.title}"?`
+            : ""
+        }
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={() => {
+          if (pendingDeleteNotification) {
+            void deleteNotification(pendingDeleteNotification.id);
+          }
+          setPendingDeleteNotification(null);
+        }}
+        onCancel={() => setPendingDeleteNotification(null)}
       />
 
       <div className="max-w-2xl mx-auto space-y-5">
@@ -378,7 +397,12 @@ export function Notifications() {
                 <div className="space-y-3">
                   <AnimatePresence>
                     {unread.map((n) => (
-                      <NotifCard key={n.id} notif={n} onRead={markNotificationRead} onDelete={deleteNotification} />
+                      <NotifCard
+                        key={n.id}
+                        notif={n}
+                        onRead={markNotificationRead}
+                        onDelete={() => setPendingDeleteNotification(n)}
+                      />
                     ))}
                   </AnimatePresence>
                 </div>
@@ -393,7 +417,12 @@ export function Notifications() {
                 </p>
                 <div className="space-y-3">
                   {read.map((n) => (
-                    <NotifCard key={n.id} notif={n} onRead={markNotificationRead} onDelete={deleteNotification} />
+                    <NotifCard
+                      key={n.id}
+                      notif={n}
+                      onRead={markNotificationRead}
+                      onDelete={() => setPendingDeleteNotification(n)}
+                    />
                   ))}
                 </div>
               </div>

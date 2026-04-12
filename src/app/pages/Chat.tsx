@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Stethoscope, Phone, Clock } from "lucide-react";
+import { Send, User, Stethoscope, Clock } from "lucide-react";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useApp } from "../context/AppContext";
 import { supabase } from "../lib/supabase";
@@ -45,11 +45,12 @@ interface ChatMsg {
 
 export function Chat() {
 
-  const { profile, isAuthenticated, markChatRead, chatMessages } = useApp();
+  const { profile, isAuthenticated, markChatRead, chatMessages, clinicIsOpen, clinicSchedule } = useApp();
   const [input, setInput] = useState("");
   const [isStaffTyping, setIsStaffTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const todaySchedule = clinicSchedule[new Date().getDay()];
 
   useEffect(() => {
     setLoading(false);
@@ -125,25 +126,28 @@ export function Chat() {
 
   return (
     <DashboardLayout title="Chat with Staff">
-      <div className="max-w-2xl mx-auto flex flex-col" style={{ height: "calc(100vh - 8rem)" }}>
+      <div className="max-w-2xl mx-auto flex min-h-0 flex-col" style={{ height: "calc(100vh - 8rem)" }}>
 
         {/* Staff info header */}
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-4 flex items-center gap-4">
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-4 flex items-center gap-3 sm:gap-4">
           <div className="relative">
             <div className="w-12 h-12 rounded-full bg-[#E8F1FF] flex items-center justify-center">
               <Stethoscope size={22} className="text-[#1B4FD8]" />
             </div>
-            <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-teal-400 border-2 border-white" />
+            <span className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${clinicIsOpen ? "bg-teal-400" : "bg-gray-400"}`} />
           </div>
           <div className="flex-1">
             <p className="text-[#0A2463] font-semibold text-sm">Manalo Medical Clinic — Staff</p>
-            <p className="text-teal-600 text-xs flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse inline-block" />
-              Online
+            <p className={`text-xs flex items-center gap-1 ${clinicIsOpen ? "text-teal-600" : "text-gray-500"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full inline-block ${clinicIsOpen ? "bg-teal-400 animate-pulse" : "bg-gray-400"}`} />
+              {clinicIsOpen ? "Online" : "Offline"}
             </p>
           </div>
-          <div className="hidden sm:flex flex-col items-end text-xs text-gray-400 gap-1">
-
+          <div className="hidden sm:flex flex-col items-end text-xs text-gray-400 gap-1 text-right">
+            <span className="flex items-center gap-1">
+              <Clock size={12} />
+              {todaySchedule?.hours || "Clinic hours unavailable"}
+            </span>
           </div>
         </div>
 
@@ -248,8 +252,8 @@ export function Chat() {
             <Send size={16} />
           </button>
         </div>
-        <p className="text-center text-xs text-gray-400 mt-2">
-          For urgent concerns, call us at <strong>0926-068-8255</strong>
+        <p className="text-center text-xs text-gray-400 mt-2 px-2">
+          {clinicIsOpen ? "Clinic staff is currently available." : "Clinic staff is currently offline based on clinic hours."} For urgent concerns, call us at <strong>0926-068-8255</strong>
         </p>
       </div>
 
