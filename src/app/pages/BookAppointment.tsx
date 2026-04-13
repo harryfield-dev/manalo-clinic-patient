@@ -404,6 +404,25 @@ export function BookAppointment() {
     void refreshTodayAppointmentStatus();
   }, [refreshTodayAppointmentStatus]);
 
+  // Fetch the most recent valid_id_url from past appointments
+  useEffect(() => {
+    const fetchPreviousId = async () => {
+      if (!profile.email) return;
+      const { data } = await supabase
+        .from("appointments")
+        .select("valid_id_url")
+        .eq("patient_email", profile.email)
+        .not("valid_id_url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (data?.valid_id_url) {
+        setPreviousIdUrl(data.valid_id_url as string);
+      }
+    };
+    void fetchPreviousId();
+  }, [profile.email]);
+
   useEffect(() => {
     const channel = supabase
       .channel("booking-calendar-live")
@@ -488,6 +507,11 @@ export function BookAppointment() {
   const [idError, setIdError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Previously uploaded valid ID from last booking
+  const [previousIdUrl, setPreviousIdUrl] = useState<string | null>(null);
+  const [reuseIdDecided, setReuseIdDecided] = useState(false); // true once user clicked Upload or Cancel
+  const [reusingPreviousId, setReusingPreviousId] = useState(false); // true if user chose to reuse
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -579,7 +603,7 @@ export function BookAppointment() {
     if (step === 2) {
       if (!form.doctor) e.doctor = "Please select a doctor";
       if (!form.consultationType) e.consultationType = "Please select a type";
-      if (!validId) e.validId = "Please upload a valid government-issued ID";
+      if (!validId && !reusingPreviousId) e.validId = "Please upload a valid government-issued ID";
     }
     setErrors(e);
 
@@ -601,9 +625,12 @@ export function BookAppointment() {
     if (step === steps.length - 1) {
       setLoading(true);
 
-      // Upload valid ID to Supabase Storage
+      // Upload valid ID to Supabase Storage (or reuse previous)
       let uploadedIdUrl: string | undefined;
-      if (validId) {
+      if (reusingPreviousId && previousIdUrl) {
+        // Reuse the previously uploaded ID URL directly
+        uploadedIdUrl = previousIdUrl;
+      } else if (validId) {
         try {
           const ext = validId.name.split(".").pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -1206,69 +1233,160 @@ export function BookAppointment() {
                               }}
                             />
 
-                            {!validId ? (
-                              <div
-                                onClick={() => fileInputRef.current?.click()}
-                                onDragEnter={(e) => { e.preventDefault(); setIsDragging(true); }}
-                                onDragLeave={() => setIsDragging(false)}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={handleDrop}
-                                className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl py-8 px-4 cursor-pointer transition-all duration-200 ${isDragging
-                                  ? "border-[#1B4FD8] bg-[#E8F1FF]"
-                                  : errors.validId
-                                    ? "border-red-300 bg-red-50"
-                                    : "border-[#1B4FD8]/30 bg-[#F4F7FF] hover:bg-[#E8F1FF] hover:border-[#1B4FD8]/60"
-                                  }`}
+                            {/* ── Reuse previous ID prompt ── */}
+                            {previousIdUrl && !reuseIdDecided && !validId && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="rounded-2xl border border-[#1B4FD8]/25 bg-[#F4F7FF] p-4 mb-3"
                               >
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDragging ? "bg-[#1B4FD8]/20" : "bg-[#E8F1FF]"}`}>
-                                  <UploadCloud size={20} className="text-[#1B4FD8]" />
+                                <div className="flex items-start gap-3">
+                                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#1B4FD8]/20 shrink-0 bg-[#E8F1FF] flex items-center justify-center">
+                                    {/\.(jpe?g|png|webp|gif)/i.test(previousIdUrl) ? (
+                                      <img src={previousIdUrl} alt="Previous ID" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <FileText size={20} className="text-[#1B4FD8]" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-[#0A2463] leading-tight">
+                                      Use recently uploaded image?
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                      We found your valid ID from your last booking.
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="text-center">
-                                  <p className="text-sm text-[#0A2463]" style={{ fontWeight: 500 }}>
-                                    Click to upload{" "}
-                                    <span className="text-gray-400" style={{ fontWeight: 400 }}>
-                                      or drag and drop
-                                    </span>
-                                  </p>
-                                  <p className="text-xs text-gray-400 mt-0.5">
-                                    JPG, PNG, PDF only — max 5MB
-                                  </p>
+                                <div className="flex gap-2 mt-3">
+                                  <button
+                                    onClick={() => {
+                                      setReusingPreviousId(true);
+                                      setReuseIdDecided(true);
+                                      setErrors((e) => { const n = { ...e }; delete n.validId; return n; });
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#1B4FD8] hover:bg-[#0A2463] text-white text-xs font-semibold py-2.5 rounded-xl transition-all shadow-sm shadow-[#1B4FD8]/20"
+                                  >
+                                    <Check size={13} />
+                                    Upload Same ID
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setReuseIdDecided(true);
+                                      setReusingPreviousId(false);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold py-2.5 rounded-xl transition-all"
+                                  >
+                                    <UploadCloud size={13} />
+                                    Upload New
+                                  </button>
                                 </div>
-                              </div>
-                            ) : (
+                              </motion.div>
+                            )}
+
+                            {/* ── Reusing previous ID confirmed ── */}
+                            {reusingPreviousId && reuseIdDecided && (
                               <motion.div
                                 initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.25 }}
-                                className="border border-[#1B4FD8]/20 bg-[#F4F7FF] rounded-xl p-3 flex items-center gap-3"
+                                className="border border-teal-300/60 bg-teal-50 rounded-xl p-3 flex items-center gap-3"
                               >
-                                {idPreviewUrl ? (
-                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#1B4FD8]/20 shrink-0">
-                                    <img src={idPreviewUrl} alt="ID preview" className="w-full h-full object-cover" />
-                                  </div>
-                                ) : (
-                                  <div className="w-14 h-14 rounded-lg bg-[#E8F1FF] flex items-center justify-center shrink-0 border border-[#1B4FD8]/20">
-                                    <FileText size={22} className="text-[#1B4FD8]" />
-                                  </div>
-                                )}
+                                <div className="w-12 h-12 rounded-lg overflow-hidden border border-teal-300/40 shrink-0 bg-white flex items-center justify-center">
+                                  {/\.(jpe?g|png|webp|gif)/i.test(previousIdUrl!) ? (
+                                    <img src={previousIdUrl!} alt="Reused ID" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <FileText size={20} className="text-teal-600" />
+                                  )}
+                                </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-[#0A2463] truncate" style={{ fontWeight: 500 }}>
-                                    {validId.name}
-                                  </p>
-                                  <p className="text-xs text-gray-400 mt-0.5">{formatFileSize(validId.size)}</p>
+                                  <p className="text-sm text-[#0A2463] font-semibold">Previously uploaded ID</p>
                                   <div className="flex items-center gap-1 mt-1">
                                     <Check size={11} className="text-teal-500" />
                                     <span className="text-teal-600 text-[11px]">Ready to submit</span>
                                   </div>
                                 </div>
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); removeId(); }}
+                                  onClick={() => {
+                                    setReusingPreviousId(false);
+                                    setReuseIdDecided(false);
+                                  }}
                                   className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300 transition-all shrink-0"
-                                  title="Remove file"
+                                  title="Change"
                                 >
                                   <X size={13} />
                                 </button>
                               </motion.div>
+                            )}
+
+                            {/* ── Normal upload (no previous, or user chose Upload New) ── */}
+                            {(!previousIdUrl || (reuseIdDecided && !reusingPreviousId)) && (
+                              <>
+                                {!validId ? (
+                                  <div
+                                    onClick={() => fileInputRef.current?.click()}
+                                    onDragEnter={(e) => { e.preventDefault(); setIsDragging(true); }}
+                                    onDragLeave={() => setIsDragging(false)}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={handleDrop}
+                                    className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl py-8 px-4 cursor-pointer transition-all duration-200 ${isDragging
+                                      ? "border-[#1B4FD8] bg-[#E8F1FF]"
+                                      : errors.validId
+                                        ? "border-red-300 bg-red-50"
+                                        : "border-[#1B4FD8]/30 bg-[#F4F7FF] hover:bg-[#E8F1FF] hover:border-[#1B4FD8]/60"
+                                      }`}
+                                  >
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDragging ? "bg-[#1B4FD8]/20" : "bg-[#E8F1FF]"}`}>
+                                      <UploadCloud size={20} className="text-[#1B4FD8]" />
+                                    </div>
+                                    <div className="text-center">
+                                      <p className="text-sm text-[#0A2463]" style={{ fontWeight: 500 }}>
+                                        Click to upload{" "}
+                                        <span className="text-gray-400" style={{ fontWeight: 400 }}>
+                                          or drag and drop
+                                        </span>
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-0.5">
+                                        JPG, PNG, PDF only — max 5MB
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.25 }}
+                                    className="border border-[#1B4FD8]/20 bg-[#F4F7FF] rounded-xl p-3 flex items-center gap-3"
+                                  >
+                                    {idPreviewUrl ? (
+                                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#1B4FD8]/20 shrink-0">
+                                        <img src={idPreviewUrl} alt="ID preview" className="w-full h-full object-cover" />
+                                      </div>
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-lg bg-[#E8F1FF] flex items-center justify-center shrink-0 border border-[#1B4FD8]/20">
+                                        <FileText size={22} className="text-[#1B4FD8]" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm text-[#0A2463] truncate" style={{ fontWeight: 500 }}>
+                                        {validId.name}
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-0.5">{formatFileSize(validId.size)}</p>
+                                      <div className="flex items-center gap-1 mt-1">
+                                        <Check size={11} className="text-teal-500" />
+                                        <span className="text-teal-600 text-[11px]">Ready to submit</span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); removeId(); }}
+                                      className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300 transition-all shrink-0"
+                                      title="Remove file"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </motion.div>
+                                )}
+                              </>
                             )}
 
                             <AnimatePresence>

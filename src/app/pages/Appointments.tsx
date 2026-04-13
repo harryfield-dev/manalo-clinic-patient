@@ -789,8 +789,10 @@ export function Appointments() {
         if (aFuture && bFuture) return aDate.getTime() - bDate.getTime();
         return bDate.getTime() - aDate.getTime();
       }
-      // newest (default)
-      return bDate.getTime() - aDate.getTime();
+      // newest (default) — sort by when the appointment was BOOKED (createdAt), not by appointment date
+      const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : aDate.getTime();
+      const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : bDate.getTime();
+      return bCreated - aCreated;
     });
 
   return (

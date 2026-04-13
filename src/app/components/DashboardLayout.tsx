@@ -37,15 +37,28 @@ const navItems: NavItem[] = [
 interface DashboardLayoutProps {
   children: React.ReactNode;
   title?: string;
+  subtitle?: string;
 }
 
-export function DashboardLayout({ children, title }: DashboardLayoutProps) {
+const PAGE_SUBTITLES: Record<string, string> = {
+  "/dashboard": "View your health overview, recent activity, and quick actions in one place.",
+  "/book": "Schedule a visit with your doctor and choose your preferred time.",
+  "/appointments": "Manage your upcoming and past appointments in one place.",
+  "/chat": "Message clinic staff for assistance, inquiries, or follow-ups.",
+  "/notifications": "Stay updated with reminders, announcements, and important alerts.",
+  "/profile": "View and update your personal and medical information.",
+  "/map": "Find the clinic location and get directions.",
+};
+
+export function DashboardLayout({ children, title, subtitle }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, profile, unreadCount, unreadChatCount } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [tutorialMenuLocked, setTutorialMenuLocked] = useState(false);
+
+  const resolvedSubtitle = subtitle ?? PAGE_SUBTITLES[location.pathname] ?? "";
 
   const handleLogout = () => {
     logout();
@@ -240,16 +253,26 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
               <Menu size={22} />
             </button>
             {title && (
-              <h1
-                className="text-[#0A2463]"
-                style={{
-                  fontFamily: "Playfair Display, serif",
-                  fontSize: "1.3rem",
-                  fontWeight: 700,
-                }}
-              >
-                {title}
-              </h1>
+              <div>
+                <h1
+                  className="text-[#0A2463] leading-tight"
+                  style={{
+                    fontFamily: "Playfair Display, serif",
+                    fontSize: "1.3rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  {title}
+                </h1>
+                {resolvedSubtitle && (
+                  <p
+                    className="text-gray-400 text-xs mt-0.5 leading-snug"
+                    style={{ fontFamily: "DM Sans, sans-serif" }}
+                  >
+                    {resolvedSubtitle}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
