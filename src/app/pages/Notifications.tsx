@@ -88,7 +88,7 @@ const typeConfig: Record<
   },
 };
 
-type TabKey = "all" | "appointments" | "chat";
+type TabKey = "all" | "appointments" | "chat" | "recentlyDeleted";
 
 const APPOINTMENT_TYPES = new Set(["Approved", "Rejected", "Cancelled", "Reminder", "Completed"]);
 
@@ -122,10 +122,14 @@ function NotifCard({
   notif,
   onRead,
   onDelete,
+  canMarkRead = true,
+  showDeleteAction = true,
 }: {
   notif: Notification;
   onRead: (id: string) => void;
   onDelete: (id: string) => void;
+  canMarkRead?: boolean;
+  showDeleteAction?: boolean;
 }) {
   const cfg = typeConfig[notif.type] ?? typeConfig.Update;
 
@@ -136,9 +140,11 @@ function NotifCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, x: -20, scale: 0.97 }}
       transition={{ duration: 0.25 }}
-      onClick={() => !notif.read && onRead(notif.id)}
+      onClick={() => {
+        if (canMarkRead && !notif.read) onRead(notif.id);
+      }}
       className={`relative bg-white rounded-2xl border border-gray-100 border-l-4 ${cfg.borderColor} p-5 transition-all duration-200 ${
-        !notif.read ? "cursor-pointer hover:shadow-md" : "opacity-70"
+        canMarkRead && !notif.read ? "cursor-pointer hover:shadow-md" : "opacity-70"
       }`}
       style={{
         boxShadow: !notif.read
@@ -182,20 +188,22 @@ function NotifCard({
 
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs text-gray-400 whitespace-nowrap">{formatTime(notif.timestamp)}</span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onDelete(notif.id); }}
-                className="rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
-                aria-label={`Delete ${notif.title}`}
-              >
-                <Trash2 size={13} />
-              </button>
+              {showDeleteAction && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDelete(notif.id); }}
+                  className="rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                  aria-label={`Delete ${notif.title}`}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           </div>
 
           <p className="text-sm text-gray-500 leading-relaxed">{notif.message}</p>
 
-          {!notif.read && (
+          {canMarkRead && !notif.read && (
             <p className="text-xs text-[#1B4FD8] mt-2 font-medium">Tap to mark as read →</p>
           )}
         </div>
@@ -205,13 +213,23 @@ function NotifCard({
 }
 
 export function Notifications() {
-  const { notifications, markNotificationRead, markAllRead, deleteNotification, clearNotifications } =
-    useApp();
+  const {
+    notifications,
+    recentlyDeletedNotifications,
+    markNotificationRead,
+    markAllRead,
+    deleteNotification,
+    clearNotifications,
+    clearRecentlyDeleted,
+  } = useApp();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [pendingDeleteNotification, setPendingDeleteNotification] = useState<Notification | null>(null);
+  const [showClearDeletedConfirm, setShowClearDeletedConfirm] = useState(false);
+  const [pendingPermanentDelete, setPendingPermanentDelete] = useState<Notification | null>(null);
 
   const filterByTab = (list: Notification[]) => {
+    if (activeTab === "recentlyDeleted") return recentlyDeletedNotifications;
     if (activeTab === "appointments") return list.filter(isAppointmentNotification);
     if (activeTab === "chat") return list.filter(isMessageNotification);
     return list;
@@ -242,6 +260,12 @@ export function Notifications() {
       icon: <MessageSquare size={14} />,
       count: notifications.filter((n) => !n.read && isMessageNotification(n)).length,
     },
+    {
+      key: "recentlyDeleted",
+      label: "Recently Deleted",
+      icon: <Trash2 size={14} />,
+      count: recentlyDeletedNotifications.length,
+    },
   ];
 
   const summaryTitle =
@@ -250,11 +274,15 @@ export function Notifications() {
         ? `${activeUnreadCount} unread notification${activeUnreadCount > 1 ? "s" : ""}`
         : activeTab === "appointments"
           ? `${activeUnreadCount} unread appointment notification${activeUnreadCount > 1 ? "s" : ""}`
+          : activeTab === "recentlyDeleted"
+            ? `${activeTotalCount} recently deleted notification${activeTotalCount > 1 ? "s" : ""}`
           : `${activeUnreadCount} unread message${activeUnreadCount > 1 ? "s" : ""}`
       : activeTab === "all"
         ? "All caught up!"
         : activeTab === "appointments"
           ? "No unread appointment notifications"
+          : activeTab === "recentlyDeleted"
+            ? "No recently deleted notifications"
           : "No unread messages";
 
   const summaryMeta =
@@ -273,7 +301,7 @@ export function Notifications() {
         onConfirm={() => { setShowClearConfirm(false); clearNotifications(); }}
         onCancel={() => setShowClearConfirm(false)}
       />
-      <ConfirmModal
+    <ConfirmModal
         open={pendingDeleteNotification !== null}
         title="Remove Notification?"
         description={
@@ -290,6 +318,33 @@ export function Notifications() {
           setPendingDeleteNotification(null);
         }}
         onCancel={() => setPendingDeleteNotification(null)}
+      />
+      <ConfirmModal
+        open={pendingPermanentDelete !== null}
+        title="Delete Permanently?"
+        description={
+          pendingPermanentDelete
+            ? `"${pendingPermanentDelete.title}" will be permanently deleted and cannot be recovered.`
+            : ""
+        }
+        confirmLabel="Delete Forever"
+        variant="danger"
+        onConfirm={() => {
+          if (pendingPermanentDelete) {
+            clearRecentlyDeleted(pendingPermanentDelete.id);
+          }
+          setPendingPermanentDelete(null);
+        }}
+        onCancel={() => setPendingPermanentDelete(null)}
+      />
+      <ConfirmModal
+        open={showClearDeletedConfirm}
+        title="Clear Recently Deleted?"
+        description="All recently deleted notifications will be permanently removed and cannot be recovered."
+        confirmLabel="Delete All"
+        variant="danger"
+        onConfirm={() => { setShowClearDeletedConfirm(false); clearRecentlyDeleted(); }}
+        onCancel={() => setShowClearDeletedConfirm(false)}
       />
 
       <div className="max-w-2xl mx-auto space-y-5">
@@ -312,7 +367,7 @@ export function Notifications() {
               <p className="text-white/50 text-xs mt-0.5">{summaryMeta}</p>
             </div>
             <div className="flex items-center gap-2">
-              {notifications.filter((n) => !n.read).length > 0 && (
+              {activeTab !== "recentlyDeleted" && notifications.filter((n) => !n.read).length > 0 && (
                 <button
                   onClick={markAllRead}
                   className="flex items-center gap-1.5 text-xs bg-white/15 hover:bg-white/25 border border-white/20 text-white px-3 py-2 rounded-xl transition-all font-medium"
@@ -320,12 +375,20 @@ export function Notifications() {
                   <CheckCheck size={13} /> Mark all read
                 </button>
               )}
-              {notifications.length > 0 && (
+              {activeTab !== "recentlyDeleted" && notifications.length > 0 && (
                 <button
                   onClick={() => setShowClearConfirm(true)}
                   className="flex items-center gap-1.5 text-xs bg-red-500/20 hover:bg-red-500/35 border border-red-400/30 text-red-300 hover:text-white px-3 py-2 rounded-xl transition-all font-medium"
                 >
                   <Trash2 size={13} /> Clear All
+                </button>
+              )}
+              {activeTab === "recentlyDeleted" && recentlyDeletedNotifications.length > 0 && (
+                <button
+                  onClick={() => setShowClearDeletedConfirm(true)}
+                  className="flex items-center gap-1.5 text-xs bg-red-500/20 hover:bg-red-500/35 border border-red-400/30 text-red-300 hover:text-white px-3 py-2 rounded-xl transition-all font-medium"
+                >
+                  <Trash2 size={13} /> Delete All
                 </button>
               )}
             </div>
@@ -378,15 +441,17 @@ export function Notifications() {
               {activeTab === "all"
                 ? "No notifications yet"
                 : activeTab === "appointments"
-                ? "No appointment notifications"
-                : "No chat messages"}
+                  ? "No appointment notifications"
+                  : activeTab === "recentlyDeleted"
+                    ? "No recently deleted notifications"
+                    : "No chat messages"}
             </p>
             <p className="text-gray-300 text-xs mt-1">You're all caught up! 🎉</p>
           </motion.div>
         ) : (
           <>
             {/* Unread */}
-            {unread.length > 0 && (
+            {activeTab !== "recentlyDeleted" && unread.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">New</p>
@@ -410,18 +475,28 @@ export function Notifications() {
             )}
 
             {/* Read history */}
-            {read.length > 0 && (
+            {(activeTab === "recentlyDeleted" ? filtered.length > 0 : read.length > 0) && (
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                  {unread.length > 0 ? "Earlier" : "Notification History"}
+                  {activeTab === "recentlyDeleted"
+                    ? "Recently Deleted"
+                    : unread.length > 0
+                      ? "Earlier"
+                      : "Notification History"}
                 </p>
                 <div className="space-y-3">
-                  {read.map((n) => (
+                 {(activeTab === "recentlyDeleted" ? filtered : read).map((n) => (
                     <NotifCard
                       key={n.id}
                       notif={n}
                       onRead={markNotificationRead}
-                      onDelete={() => setPendingDeleteNotification(n)}
+                      onDelete={() =>
+                        activeTab === "recentlyDeleted"
+                          ? setPendingPermanentDelete(n)
+                          : setPendingDeleteNotification(n)
+                      }
+                      canMarkRead={activeTab !== "recentlyDeleted"}
+                      showDeleteAction={true}
                     />
                   ))}
                 </div>

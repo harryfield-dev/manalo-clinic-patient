@@ -395,6 +395,7 @@ interface AppContextType {
   clinicIsOpen: boolean;
   appointments: Appointment[];
   notifications: Notification[];
+  recentlyDeletedNotifications: Notification[];
   chatMessages: ChatMessage[];
   slotBookings: Record<string, number>;
   unreadCount: number;
@@ -415,6 +416,7 @@ interface AppContextType {
   markAllRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
+  clearRecentlyDeleted: (id?: string) => Promise<void>;
   sendChatMessage: (text: string) => void;
   markChatRead: () => Promise<void>;
 }
@@ -427,6 +429,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<PatientProfile>(defaultProfile);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [recentlyDeletedNotifications, setRecentlyDeletedNotifications] = useState<Notification[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -463,6 +466,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProfile(defaultProfile);
     setAppointments([]);
     setNotifications([]);
+    setRecentlyDeletedNotifications([]);
     setChatMessages([]);
     setSlotBookings({});
     setAuthErrorMessage(message);
@@ -562,6 +566,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
     setSlotBookings(map);
+  };
+
+  const fetchRecentlyDeletedNotifications = async (email: string) => {
+    const { data, error } = await supabase
+      .from("deleted_notifications")
+      .select("*")
+      .eq("patient_email", email)
+      .order("deleted_at", { ascending: false });
+
+    if (error || !data) return;
+
+    const mapped: Notification[] = data.map((n: any) => ({
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      timestamp: n.timestamp,
+      read: n.read,
+    }));
+
+    setRecentlyDeletedNotifications(mapped);
   };
 
   const fetchNotifications = async (email: string) => {
@@ -728,6 +753,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setProfile(mapPatientToProfile(access.patient));
           await fetchAppointments(email);
           await fetchNotifications(email);
+          await fetchRecentlyDeletedNotifications(email);
           await fetchChatMessages(email, access.patient.id);
           setIsAuthenticated(true);
         }
@@ -879,7 +905,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const profileData = mapPatientToProfile(access.patient);
       setProfile(profileData);
       await fetchAppointments(cleanEmail);
-      await fetchNotifications(cleanEmail);
+     await fetchNotifications(cleanEmail);
+      await fetchRecentlyDeletedNotifications(cleanEmail);
       await fetchChatMessages(cleanEmail, access.patient.id);
 
       const loginNotif = buildLoginNotification(now);
@@ -1075,22 +1102,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteNotification = async (id: string) => {
-    setNotifications((prev) => removeById(prev, id));
+    let removedNotification: Notification | undefined;
+
+    setNotifications((prev) => {
+      removedNotification = prev.find((n) => n.id === id);
+      return removeById(prev, id);
+    });
+
+    await new Promise((r) => setTimeout(r, 0)); // flush state
+
+    if (removedNotification && profile.email && profile.id) {
+      const deleted = removedNotification;
+      setRecentlyDeletedNotifications((current) =>
+        sortNotifications([
+          deleted,
+          ...current.filter((n) => n.id !== deleted.id),
+        ])
+      );
+      await supabase.from("deleted_notifications").upsert({
+        id: deleted.id,
+        patient_id: profile.id,
+        patient_email: profile.email,
+        type: deleted.type,
+        title: deleted.title,
+        message: deleted.message,
+        timestamp: deleted.timestamp,
+        read: deleted.read,
+        deleted_at: new Date().toISOString(),
+      }, { onConflict: "id,patient_email" });
+    }
+
     if (profile.email) {
       appendDismissedNotificationIds(profile.email, [id]);
       await supabase.from("notifications").delete().eq("patient_email", profile.email).eq("id", id);
     }
   };
 
-  const clearNotifications = async () => {
+ const clearNotifications = async () => {
+    if (notifications.length > 0 && profile.email && profile.id) {
+      setRecentlyDeletedNotifications((prev) => sortNotifications([...notifications, ...prev]));
+      const now = new Date().toISOString();
+      await supabase.from("deleted_notifications").upsert(
+        notifications.map((n) => ({
+          id: n.id,
+          patient_id: profile.id,
+          patient_email: profile.email,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          timestamp: n.timestamp,
+          read: n.read,
+          deleted_at: now,
+        })),
+        { onConflict: "id,patient_email" }
+      );
+    }
     setNotifications([]);
     if (profile.email) {
       appendDismissedNotificationIds(profile.email, notifications.map((n) => n.id));
-      await supabase.from('notifications').delete().eq('patient_email', profile.email);
+      await supabase.from("notifications").delete().eq("patient_email", profile.email);
     }
   };
 
-  // ── markChatRead: marks all staff messages as read from patient's perspective ──
+ const clearRecentlyDeleted = async (id?: string) => {
+    if (id) {
+      setRecentlyDeletedNotifications((prev) => prev.filter((n) => n.id !== id));
+      if (profile.email) {
+        await supabase.from("deleted_notifications")
+          .delete()
+          .eq("patient_email", profile.email)
+          .eq("id", id);
+      }
+    } else {
+      setRecentlyDeletedNotifications([]);
+      if (profile.email) {
+        await supabase.from("deleted_notifications")
+          .delete()
+          .eq("patient_email", profile.email);
+      }
+    }
+  };
+
+  // ── markChatRead: marks all staff messages as read from patient's perspective ──  
+
   const markChatRead = async () => {
     setChatMessages((prev) =>
       prev.map((message) => message.sender === "staff" ? { ...message, read: true } : message)
@@ -1153,13 +1247,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      isAuthenticated, authErrorMessage, profile, appointments, notifications,
+      isAuthenticated, authErrorMessage, profile, appointments, notifications, recentlyDeletedNotifications,
       chatMessages, slotBookings, unreadCount, unreadChatCount, loading,
       clinicName, clinicAddress, clinicPhone, clinicMapsLink, clinicSchedule, clinicIsOpen,
       loginTimestamp,
       login, logout, clearAuthError, register, updateProfile, addAppointment, cancelAppointment,
       getSlotCount, isSlotFull, hasAppointmentOnDate,
-      markNotificationRead, markAllRead, deleteNotification, clearNotifications,
+      markNotificationRead, markAllRead, deleteNotification, clearNotifications: clearNotifications, clearRecentlyDeleted,
       sendChatMessage, markChatRead,
     }}>
       {children}

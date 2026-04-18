@@ -70,9 +70,9 @@ const initialForm: FormData = {
 const PHONE_ERROR_MESSAGE = "Enter a valid Philippine mobile number.";
 const PASSWORD_LENGTH = 8;
 const PASSWORD_ERROR_MESSAGE = `Password must be exactly ${PASSWORD_LENGTH} characters.`;
-const DATE_OF_BIRTH_MIN = "1900-01-01";
-const DATE_OF_BIRTH_MAX = "2026-12-31";
-const DATE_OF_BIRTH_ERROR_MESSAGE = "Enter a valid birth date from 1900 to 2026.";
+const DATE_OF_BIRTH_MIN = "1950-01-01";
+const DATE_OF_BIRTH_MAX = "2021-12-31";
+const DATE_OF_BIRTH_ERROR_MESSAGE = "Enter a valid birth date from 1950 to 2021.";
 
 function maskEmail(email: string) {
   const [local, domain] = email.split("@");
@@ -876,7 +876,7 @@ export function Register() {
                         max={DATE_OF_BIRTH_MAX}
                         className={inputClass("dateOfBirth")}
                       />
-                      <p className="text-xs text-gray-400 mt-1">Select a birth date from 1900 to 2026.</p>
+                      <p className="text-xs text-gray-400 mt-1">Select a birth date from 1950 to 2021.</p>
                       {errors.dateOfBirth && <p className="text-red-500 text-xs mt-1">{errors.dateOfBirth}</p>}
                     </div>
                   </div>
